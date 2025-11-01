@@ -102,36 +102,35 @@ Multiple handlers can be registered; errors inside handlers are swallowed so the
 
 `MagicLinks::MemoryStore` is perfect for tests and single-process servers, but production deployments typically need a shared store. Implement `MagicLinks::Store` with two methods: `mark_used!(jti:, exp:)` (atomic first-write wins) and optional `used?(jti:)`/`sweep!` helpers.
 
-### PostgreSQL / MySQL (SQL Example)
+### SQLite (SQL Example)
 
 ```ruby
-# Table DDL (PostgreSQL)
+# Table DDL (SQLite)
 # CREATE TABLE magic_link_tokens (
 #   jti TEXT PRIMARY KEY,
-#   exp TIMESTAMP WITH TIME ZONE NOT NULL
+#   exp INTEGER NOT NULL
 # );
 
-require 'pg'
+require 'sqlite3'
 
-class SqlStore < MagicLinks::Store
-  def initialize(conn = PG.connect(ENV.fetch('DATABASE_URL')))
-    @conn = conn
+class SqliteStore < MagicLinks::Store
+  def initialize(path = ENV.fetch('MLINK_DB_PATH', 'magic_links.sqlite3'))
+    @db = SQLite3::Database.new(path)
+    @db.busy_timeout = 5000
   end
 
   def mark_used!(jti:, exp:)
-    @conn.transaction do |c|
-      res = c.exec_params('INSERT INTO magic_link_tokens (jti, exp) VALUES ($1, to_timestamp($2)) ON CONFLICT DO NOTHING', [jti, exp])
-      res.cmd_tuples.positive?
-    end
+    @db.execute('INSERT OR IGNORE INTO magic_link_tokens (jti, exp) VALUES (?, ?)', [jti, exp])
+    @db.changes.positive?
   end
 
   def sweep!
-    @conn.exec('DELETE FROM magic_link_tokens WHERE exp < NOW()')
+    @db.execute('DELETE FROM magic_link_tokens WHERE exp < ?', [Time.now.to_i])
   end
 end
 ```
 
-The `INSERT ... ON CONFLICT DO NOTHING` ensures the first caller returns `true` and later replays return `false`. Replace `PG` with your preferred client library; the gem itself does not depend on it.
+`INSERT OR IGNORE` makes the first caller succeed and subsequent replays fail without raising. Swap in any other SQLite client if you prefer; the gem itself does not depend on it.
 
 ### Redis Example
 
