@@ -6,6 +6,7 @@ require 'openssl'
 require 'securerandom'
 require 'time'
 
+require_relative 'magic_links/version'
 require_relative 'magic_links/config'
 require_relative 'magic_links/codec'
 require_relative 'magic_links/signature'
